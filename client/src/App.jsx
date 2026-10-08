@@ -1,33 +1,56 @@
-import { useEffect, useState } from 'react';
+import { useState, useEffect } from 'react';
+import Login from './Login';
 
-function App() {
-  const [status, setStatus] = useState("Connecting to backend...");
+export default function App() {
+  const [token, setToken] = useState(() => sessionStorage.getItem('token'));
+  const [userInfo, setUserInfo] = useState(null);
+  const [error, setError] = useState('');
 
-  useEffect(()=>{
-    fetch('http://localhost:4000/health')
-    .then((res) => res.json())
-    .then((data) => {
-      if (data.ok){
-        setStatus('Connected to backend successfully');
-      } else{
-        setStatus('Server responded, but status is not OK.')
-      }
+  // Automatically test token against protected endpoint when token exists
+  useEffect(() => {
+    if (!token) return;
+
+    fetch('http://localhost:4000/api/auth/me', {
+      headers: {
+        Authorization: `Bearer ${token}`,
+      },
     })
-    .catch((err) => {
-      console.error('Fetch error:', err);
-      setStatus('Failed to connect to backend.');
-    });
-  }, []
-  );
+      .then((res) => {
+        if (!res.ok) throw new Error('Session invalid or expired');
+        return res.json();
+      })
+      .then((data) => setUserInfo(data))
+      .catch((err) => {
+        setError(err.message);
+        handleLogout();
+      });
+  }, [token]);
+
+  const handleLogout = () => {
+    sessionStorage.removeItem('token');
+    setToken(null);
+    setUserInfo(null);
+  };
+
+  if (!token) {
+    return <Login onLoginSuccess={(newToken) => setToken(newToken)} />;
+  }
 
   return (
-    <div style={{padding: '2rem', fontFamily: 'sans-serif'}}>
-      <h1>Journal App</h1>
-      <p>
-        Backend Status: <strong>{status}</strong>
-      </p>
+    <div style={{ maxWidth: '500px', margin: '40px auto', fontFamily: 'sans-serif' }}>
+      <h2>Dashboard</h2>
+      {userInfo ? (
+        <div>
+          <p><strong>Status:</strong> Authenticated</p>
+          <p><strong>User ID:</strong> {userInfo.userId}</p>
+          <p><strong>Encryption Key Status:</strong> {userInfo.hasEncryptionKey ? 'Loaded in RAM' : 'Missing'}</p>
+          <button onClick={handleLogout} style={{ padding: '8px 16px', marginTop: '12px' }}>
+            Log Out
+          </button>
+        </div>
+      ) : (
+        <p>Loading session data...</p>
+      )}
     </div>
-  )
+  );
 }
-
-export default App
