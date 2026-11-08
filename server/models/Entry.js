@@ -29,6 +29,10 @@ const entrySchema = new mongoose.Schema(
         excerpt: {
             type: encryptedFieldSchema,
             required: true
+        },
+        body: {
+            type: encryptedFieldSchema,
+            required: true
         }
     },
     {

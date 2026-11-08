@@ -3,6 +3,7 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const User = require('./models/User');
 const authRoutes = require('./routes/auth');
+const entries = require('./routes/entries')
 
 require('dotenv').config();
 
@@ -20,8 +21,13 @@ app.get('/health', (req, res) => {
 // Mount authentication Routes
 app.use('/api/auth', authRoutes);
 
+//Mount entries Routes
+app.use('/api/entries', entries);
+
+
 const PORT = process.env.PORT;
 const MONGO_URI = process.env.MONGO_URI;
+
 
 mongoose
 .connect(MONGO_URI)
