@@ -40,7 +40,7 @@ function decryptField({ ciphertext, iv, authTag }, key) {
     const decipher = crypto.createDecipheriv(ALGORITHM, key, ivBuffer);
     decipher.setAuthTag(authTagBuffer);
 
-    let plaintext = decipher.update(ciphertext, 'hex', 'uft8');
+    let plaintext = decipher.update(ciphertext, 'hex', 'utf8');
     plaintext += decipher.final('utf8');
 
     return plaintext;
