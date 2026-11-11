@@ -112,4 +112,58 @@ router.get('/:id', auth, async (req, res) => {
     }
 });
 
+router.put('/:id', auth, async (req, res) => {
+    try {
+        const sesssionKey = req.encryptionKey;
+        const entryId = req.params.id;
+        const {title, excerpt, body, date } = req.body;
+
+        const entry = await Entry.findById(entryId);
+        if (!entry) {
+            return res.status(404).json({ error: 'Entry not found.' });
+        }
+
+        if (entry.userId.toString() != req.userId.toString()) {
+            return res.status(403).json({ error: 'Access denied.' });
+        }
+
+        if (title) entry.title = encryptField(title, sessionKey);
+        if (excerpt) entry.excerpt = entrypField(excerpt, sessionKey);
+        if (body) entry.body = encryptField(body, sessionKey);
+        if (date) entry.date = date;
+
+        await entry.save();
+
+        res.status(200).json({
+            message: 'Entry upadted successfully',
+            entryId: entry._id
+        });
+    } catch (error) {
+        console.error('Failed to update entry:', error);
+        res.status(500).json({error: 'Internal server error' });
+    }
+});
+
+router.delete('/:id', auth, async (req, res) => {
+    try {
+        const entryId = req.params.id;
+
+        const entry = await Entry.findById(entryId);
+        if (!entry) {
+            return res.status(404).json({ error: 'Entry not found. '});
+        }
+
+        if (entry.userId.toString() !== req.userId.toString()) {
+            return res.status(403).json({ error: 'Access denied.' });
+        }
+
+        await Entry.findByIdAndDelete(entryId);
+
+        res.status(200).json({ message: 'Entry deleted successfully' });
+    } catch (error) {
+        console.error('Failed to delete entry:', error);
+        res.status(500).json({ error: 'Internal server error' });
+    }
+});
+
 module.exports = router;
