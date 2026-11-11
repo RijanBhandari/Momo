@@ -20,7 +20,7 @@ const authMiddleware = (req, res, next) => {
         if (!encryptionKey) {
             return res.status(401).json({
                 error: 'Session expired or server restarted. Please login again.'
-            })
+            });
         }
         
         // Attach user context to request

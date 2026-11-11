@@ -76,6 +76,56 @@ router.get('/', auth, async (req, res) => {
     }
 });
 
+router.get('/search', auth, async (req, res) => {
+    try {
+        const sessionKey = req.encryptionKey;
+        const searchQuery = req.query.q;
+
+        if (!searchQuery) {
+            return res.status(400).json({ error: 'Search query parameter "q" is required.' });
+        }
+
+        // Fetch all entries for this user
+        const entries = await Entry.find({ userId: req.userId });
+        const lowerQuery = searchQuery.toLowerCase();
+        const matchedEntries = [];
+
+        for (const entry of entries) {
+            try {
+                // Decrypt fields so we can search their plaintext contents
+                const title = decryptField(entry.title, sessionKey);
+                const excerpt = decryptField(entry.excerpt, sessionKey);
+                const body = decryptField(entry.body, sessionKey);
+
+                // Check if query exists in title, excerpt, or body
+                if (
+                    title.toLowerCase().includes(lowerQuery) ||
+                    excerpt.toLowerCase().includes(lowerQuery) ||
+                    body.toLowerCase().includes(lowerQuery)
+                ) {
+                    matchedEntries.push({
+                        _id: entry._id,
+                        date: entry.date,
+                        title,
+                        excerpt,
+                        body,
+                        createdAt: entry.createdAt,
+                        updatedAt: entry.updatedAt
+                    });
+                }
+            } catch (err) {
+                console.error(`Failed to decrypt entry ${entry._id} during search:`, err.message);
+            }
+        }
+        
+        res.status(200).json(matchedEntries);
+    } catch (error) {
+        console.error('Search failed:', error);
+        res.status(500).json({error: 'Internal server error' });
+    }
+    
+});
+
 //GET /entries/:id - Fetch a single entry (Decrypts all fields + ownership security check)
 router.get('/:id', auth, async (req, res) => {
     try {
@@ -96,7 +146,7 @@ router.get('/:id', auth, async (req, res) => {
         const decryptedTitle = decryptField(entry.title, sessionKey);
         const decryptedExcerpt = decryptField(entry.excerpt, sessionKey);
         const decryptedBody = decryptField(entry.body, sessionKey);
-
+        
         res.status(200).json({
             _id: entry._id,
             date: entry.date,
@@ -114,7 +164,7 @@ router.get('/:id', auth, async (req, res) => {
 
 router.put('/:id', auth, async (req, res) => {
     try {
-        const sesssionKey = req.encryptionKey;
+        const sessionKey = req.encryptionKey;
         const entryId = req.params.id;
         const {title, excerpt, body, date } = req.body;
 
@@ -128,14 +178,14 @@ router.put('/:id', auth, async (req, res) => {
         }
 
         if (title) entry.title = encryptField(title, sessionKey);
-        if (excerpt) entry.excerpt = entrypField(excerpt, sessionKey);
+        if (excerpt) entry.excerpt = encryptField(excerpt, sessionKey);
         if (body) entry.body = encryptField(body, sessionKey);
         if (date) entry.date = date;
 
         await entry.save();
 
         res.status(200).json({
-            message: 'Entry upadted successfully',
+            message: 'Entry updated successfully',
             entryId: entry._id
         });
     } catch (error) {
