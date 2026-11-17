@@ -110,6 +110,24 @@ router.get('/me', authMiddleware, (req, res) => {
     });
 });
 
+router.post('/logout', authMiddleware, (req, res) => {
+    try {
+        const authHeader = req.headers.authorization;
+        const token = authHeader.split(' ')[1];
+
+        // Decode the token to get sessionId
+        const decoded = jwt.decode(token);
+
+        if (decoded && decoded.sessionId) {
+            keyStore.delete(decoded.sessionId);
+        }
+
+        res.status(200).json({ message: 'Logged out successfully.' });
+    } catch (error) {
+        console.error('Logout error:', error);
+        res.status(500).json({ error: 'Internal server error.' });
+    }
+});
 
 module.exports = router;
 
