@@ -23,12 +23,10 @@ const entrySchema = new mongoose.Schema(
             default: Date.now
         },
         title: {
-            type: encryptedFieldSchema,
-            required: true
+            type: encryptedFieldSchema
         },
         excerpt: {
-            type: encryptedFieldSchema,
-            required: true
+            type: encryptedFieldSchema
         },
         body: {
             type: encryptedFieldSchema,

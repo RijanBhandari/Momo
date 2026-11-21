@@ -1,16 +1,23 @@
 import { useState, useEffect } from 'react';
 import Login from './Login';
+import Register from './Register';
 import EntryList from './components/EntryList'
-import Editor from './components/Editor';
 
 export default function App() {
   const [token, setToken] = useState(() => sessionStorage.getItem('token'));
   const [userInfo, setUserInfo] = useState(null);
   const [error, setError] = useState('');
+  const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  const [registrationStatusLoaded, setRegistrationStatusLoaded] = useState(false);
+  const [sidebarOpen, setSidebarOpen] = useState(false);
 
-  // Navigation & Editor State
-  const [currentView, setCurrentView] = useState('list');
-  const [activeEntryId, setActiveEntryId] = useState(null);
+  useEffect(() => {
+    fetch('http://localhost:4000/api/auth/registration-status')
+      .then((res) => res.json())
+      .then((data) => setRegistrationEnabled(data.enabled === true))
+      .catch(() => setRegistrationEnabled(false))
+      .finally(() => setRegistrationStatusLoaded(true));
+  }, []);
 
   // Automatically test token against protected endpoint when token exists
   useEffect(() => {
@@ -26,8 +33,8 @@ export default function App() {
         return res.json();
       })
       .then((data) => setUserInfo(data))
-      .catch((err) => {
-        setError(err.message);
+      .catch(() => {
+        setError('Your session has expired. Please sign in again.');
         handleLogout();
       });
   }, [token]);
@@ -39,56 +46,25 @@ export default function App() {
   };
 
   if (!token) {
-    return <Login onLoginSuccess={(newToken) => setToken(newToken)} />;
+    const onLoginSuccess = (newToken) => setToken(newToken);
+    if (window.location.pathname === '/register') {
+      if (!registrationStatusLoaded) return <p>Loading…</p>;
+      if (registrationEnabled) return <Register onLoginSuccess={onLoginSuccess} />;
+      window.history.replaceState({}, '', '/');
+    }
+    return <Login
+      onLoginSuccess={onLoginSuccess}
+      registrationEnabled={registrationEnabled && registrationStatusLoaded}
+    />;
   }
 
   return (
-    <div className="App" style={{ maxWidth: '800px', margin: '0 auto', padding: '20px' }}>
-      <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', borderBottom: '1px solid #ccc', paddingBottom: '10px' }}>
-        <h2
-          style={{ cursor: 'pointer', margin: 0 }}
-          onClick={() => { setCurrentView('list'); setActiveEntryId(null); }}
-        >Momo Journal
-        </h2>
-        
-        <div style={{ display: 'flex', gap: '10px', alignItems: 'center' }}>
-          {currentView == 'list' && (
-            <button
-              onClick={() => {setActiveEntryId(null); setCurrentView('editor');}}
-              style={{ padding: '8px 12px', cursor: 'pointer', backgroundColor: '#007bff', color: '#fff', border: 'none', borderRadius: '4px' }}
-            >
-              + New Entry
-            </button>
-          )}
-        <botton onClick={handleLogout} style={{ padding: '8px 12px', cursor: 'pointer' }}>
-            Log Out
-        </botton>
-        </div>
-      </header>
-
-      {error && <p style={{ color: 'red' }}>{error}</p>}
-
-      {/* Conditional view rendering */}
-      {currentView === 'list' ? (
-        <EntryList
-          onSelectEntry={(id) => {
-            setActiveEntryId(id);
-            setCurrentView('editor');
-        }}
-        />
-      ) : (
-        <Editor
-          entryId={activeEntryId}
-          onSave={() => {
-            setCurrentView('list');
-            setActiveEntryId(null);
-          }}
-          onCancel={() => {
-            setCurrentView('list');
-            setActiveEntryId(null);
-          }}
-          />
-        )}
+    <div className={`App${sidebarOpen ? ' sidebar-open' : ''}`}>
+      <button className="mobile-menu-toggle" type="button" aria-expanded={sidebarOpen} onClick={() => setSidebarOpen((open) => !open)}>
+        {sidebarOpen ? 'Close' : 'Menu'}
+      </button>
+      {error && <p className="app-error">{error}</p>}
+      <EntryList onLogout={handleLogout} onCloseSidebar={() => setSidebarOpen(false)} />
     </div>
   );
 }

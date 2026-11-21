@@ -103,7 +103,6 @@ return (
                 type="text"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
-                required
                 style={{ width: '100%', padding: '8px' }}
                 />
             </div>
