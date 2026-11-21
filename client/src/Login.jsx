@@ -1,6 +1,6 @@
 import { useState } from 'react';
 
-export default function Login({ onLoginSuccess }) {
+export default function Login({ onLoginSuccess, registrationEnabled }) {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
@@ -79,6 +79,11 @@ export default function Login({ onLoginSuccess }) {
                 {loading ? 'Logging in...' : 'Login In'}
             </button>
         </form>
+        {registrationEnabled && (
+            <p style={{ marginTop: '16px', textAlign: 'center' }}>
+                Need an account? <a href="/register">Register</a>
+            </p>
+        )}
         </div>
     );
 }

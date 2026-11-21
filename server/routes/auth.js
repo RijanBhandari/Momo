@@ -15,7 +15,17 @@ const scryptAsync = util.promisify(crypto.scrypt)
 // Middle ware test
 const authMiddleware = require('../middleware/auth');
 
+const registrationEnabled = () => process.env.ALLOW_REGISTRATION === 'true';
+
+router.get('/registration-status', (req, res) => {
+    res.json({ enabled: registrationEnabled() });
+});
+
 router.post('/register', async(req, res) => {
+    if (!registrationEnabled()) {
+        return res.status(403).json({error: 'Registration is disabled.'});
+    }
+
     try{
         const {username, password} = req.body;
 

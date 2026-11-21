@@ -10,6 +10,8 @@ const ALGORITHM = 'aes-256-gcm';
  */
 
 function encryptField(plaintext, key){
+    if (plaintext === undefined || plaintext === null) return undefined;
+
     const iv = crypto.randomBytes(12);
     const cipher = crypto.createCipheriv(ALGORITHM, key, iv);
 
@@ -33,7 +35,11 @@ function encryptField(plaintext, key){
  * @returns {string} The decrypted plaintext string
  */
 
-function decryptField({ ciphertext, iv, authTag }, key) {
+function decryptField(encryptedObj, key) {
+    if (!encryptedObj || !encryptedObj.iv || !encryptedObj.authTag || encryptedObj.ciphertext === undefined) {
+        return undefined;
+    }
+    const { ciphertext, iv, authTag } = encryptedObj;
     const ivBuffer = Buffer.from(iv, 'hex');
     const authTagBuffer = Buffer.from(authTag, 'hex');
 
