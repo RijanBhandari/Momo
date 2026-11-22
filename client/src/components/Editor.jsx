@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import { useState, useEffect } from 'react';
 import { apiFetch } from '../utils/api';
 
 export default function Editor({ entryId, onSave, onCancel }) {

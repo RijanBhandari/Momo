@@ -45,7 +45,6 @@ button { color: inherit; }
 .journal-month > button:not(.month-toggle):hover, .journal-month > button.active { color: var(--accent); background: var(--accent-bg); }
 .logout-button { align-self: flex-start; margin: 24px 0 0 8px; padding: 6px 0; border: 0; background: transparent; color: var(--muted); font-size: .82rem; cursor: pointer; }
 .logout-button:hover { color: #d4d4d8; }
-.sidebar-save-status { align-self: flex-start; min-height: 1em; margin: 18px 0 -20px 8px; color: var(--muted); font-size: .72rem; }
 .journal-page { min-width: 0; height: 100%; overflow: visible; }
 .journal-page > div { width: 100%; height: 100%; }
 .journal-page [data-testid="virtuoso-scroller"] { width: 100%; overflow-x: hidden !important; scrollbar-width: thin; scrollbar-color: #3a3b44 transparent; }
