@@ -98,10 +98,11 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
     const appliedSequence = useRef(new Map());
     const beforeUnloadAttached = useRef(false);
     const flushRef = useRef(null);
+    const saveEntryRef = useRef(null);
     const virtuoso = useRef(null);
     const jumpTargetIndex = useRef(null);
-    const jumpSettleTimer = useRef(null);
-    const jumpHardTimer = useRef(null);
+    const jumpFrame = useRef(null);
+    const [isJumping, setIsJumping] = useState(false);
     const [activeDate, setActiveDate] = useState('');
     const [collapsedMonths, setCollapsedMonths] = useState({});
     const [searchQuery, setSearchQuery] = useState('');
@@ -168,8 +169,9 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
         const page = document.querySelector('.journal-page [data-testid="virtuoso-scroller"]') || document.querySelector('.journal-page');
         page?.addEventListener('scroll', updateActiveDate, { passive: true });
         window.addEventListener('resize', updateActiveDate);
-        updateActiveDate();
+        const frame = requestAnimationFrame(updateActiveDate);
         return () => {
+            cancelAnimationFrame(frame);
             page?.removeEventListener('scroll', updateActiveDate);
             window.removeEventListener('resize', updateActiveDate);
         };
@@ -177,23 +179,15 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
 
     const clearJumpRetry = useCallback(() => {
         jumpTargetIndex.current = null;
-        clearTimeout(jumpSettleTimer.current);
-        clearTimeout(jumpHardTimer.current);
+        cancelAnimationFrame(jumpFrame.current);
     }, []);
-
-    const handleTotalListHeightChanged = useCallback(() => {
-        const index = jumpTargetIndex.current;
-        if (index === null) return;
-        virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
-        clearTimeout(jumpSettleTimer.current);
-        jumpSettleTimer.current = setTimeout(clearJumpRetry, 150);
-    }, [clearJumpRetry]);
 
     useEffect(() => {
         const cancelForManualInput = (event) => {
             if (jumpTargetIndex.current === null) return;
             if (event.type === 'keydown' && !['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(event.key)) return;
             clearJumpRetry();
+            setIsJumping(false);
         };
         window.addEventListener('wheel', cancelForManualInput, { passive: true });
         window.addEventListener('touchstart', cancelForManualInput, { passive: true });
@@ -213,10 +207,28 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
         setActiveDate(key);
         await loadWindow(index, index);
         clearJumpRetry();
+        setIsJumping(true);
         jumpTargetIndex.current = index;
-        jumpHardTimer.current = setTimeout(clearJumpRetry, 2000);
-        jumpSettleTimer.current = setTimeout(clearJumpRetry, 150);
-        virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'smooth' });
+        let started = null;
+        let alignedFrames = 0;
+        const settle = () => {
+            if (jumpTargetIndex.current !== index) return;
+            started ??= performance.now();
+            virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
+            const scroller = document.querySelector('.journal-page [data-testid="virtuoso-scroller"]');
+            const el = document.querySelector(`[data-journal-date="${key}"]`);
+            const aligned = scroller && el &&
+                Math.abs(el.getBoundingClientRect().top - scroller.getBoundingClientRect().top) < 2;
+            alignedFrames = aligned ? alignedFrames + 1 : 0;
+            if (alignedFrames >= 6 || performance.now() - started > 3000) {
+                clearJumpRetry();
+                setIsJumping(false);
+                return;
+            }
+            jumpFrame.current = requestAnimationFrame(settle);
+        };
+        virtuoso.current?.scrollToIndex({ index, align: 'start', behavior: 'auto' });
+        jumpFrame.current = requestAnimationFrame(settle);
         const pending = pendingSelectionRef.current;
         if (pending?.dateKey === key) {
             applyPendingSelection(document.querySelector(`[data-journal-date="${key}"] textarea`), key);
@@ -243,7 +255,7 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                 const knownDates = (await response.json()).map(dateKey);
                 const allDates = [...new Set([...knownDates, today])].sort();
                 if (!cancelled) setDates(allDates);
-            } catch (err) {
+            } catch {
                 if (!cancelled) setError('Unable to load entry dates. Please try again.');
             } finally {
                 if (!cancelled) setLoading(false);
@@ -286,7 +298,7 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                     });
                     entryCache.current = next;
                     setEntries(next);
-                } catch (err) {
+                } catch {
                     setError('Unable to load entries. Please try again.');
                 } finally {
                     needed.forEach((key) => {
@@ -304,11 +316,7 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
     useEffect(() => {
         const query = searchQuery.trim();
         const requestId = ++searchRequest.current;
-        if (!query) {
-            setSearchResults([]);
-            setSearchTruncated(false);
-            return undefined;
-        }
+        if (!query) return undefined;
         const timer = setTimeout(async () => {
             try {
                 const response = await apiFetch(`/api/entries/search?q=${encodeURIComponent(query)}`);
@@ -318,14 +326,17 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                     setSearchResults(result.matches || []);
                     setSearchTruncated(result.truncated === true);
                 }
-            } catch (err) {
+            } catch {
                 if (searchRequest.current === requestId) setError('Unable to search entries. Please try again.');
             }
         }, 300);
         return () => clearTimeout(timer);
     }, [searchQuery]);
 
-    const groupedSearchResults = searchResults.reduce((groups, match) => {
+    const activeResults = searchQuery.trim() ? searchResults : [];
+    const activeTruncated = searchQuery.trim() ? searchTruncated : false;
+
+    const groupedSearchResults = activeResults.reduce((groups, match) => {
         const key = dateKey(match.date);
         groups[key] ??= [];
         groups[key].push(match);
@@ -355,21 +366,25 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
         const updated = { ...entryCache.current, [key]: { ...entryCache.current[key], body } };
         entryCache.current = updated;
         setEntries(updated);
+        clearTimeout(retryTimers.current.get(key));
+        retryTimers.current.delete(key);
+        retryAttempts.current.delete(key);
+        clearTimeout(saveTimers.current.get(key));
         if (body === updated[key].originalBody && !savesInFlight.current.has(key)) {
             dirtyEntries.current.delete(key);
-            clearTimeout(retryTimers.current.get(key));
-            retryTimers.current.delete(key);
-            retryAttempts.current.delete(key);
+            setFailedSaveKeys((current) => {
+                if (!current.has(key)) return current;
+                const next = new Set(current);
+                next.delete(key);
+                return next;
+            });
             setSaveStates((current) => ({ ...current, [key]: 'saved' }));
-        } else {
-            dirtyEntries.current.set(key, body);
-            clearTimeout(retryTimers.current.get(key));
-            retryTimers.current.delete(key);
-            retryAttempts.current.delete(key);
+            syncBeforeUnload();
+            return;
         }
+        dirtyEntries.current.set(key, body);
         syncBeforeUnload();
         setSaveStates((current) => ({ ...current, [key]: 'pending' }));
-        clearTimeout(saveTimers.current.get(key));
         saveTimers.current.set(key, setTimeout(() => saveEntry(key), 1000));
     };
 
@@ -393,7 +408,14 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
         }
         const entry = entryCache.current[key];
         const body = dirtyEntries.current.get(key);
-        if (!entry || body === undefined || (!entry._id && !body.trim())) return;
+        if (!entry || body === undefined) return;
+        if (!entry._id && !body.trim()) {
+            // Nothing worth creating (blank new entry): treat as clean so the status doesn't stick on "Saving…".
+            dirtyEntries.current.delete(key);
+            setSaveStates((current) => ({ ...current, [key]: 'saved' }));
+            syncBeforeUnload();
+            return;
+        }
         const isNew = !entry._id;
         const payload = JSON.stringify(isNew ? { body, date: `${key}T12:00:00` } : { body });
         if (keepalive && new TextEncoder().encode(payload).byteLength > 60 * 1024) return;
@@ -478,9 +500,14 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
             clearTimeout(retryTimers.current.get(key));
             retryTimers.current.delete(key);
         });
-        await Promise.all(keys.map((key) => saveEntry(key, { keepalive })));
+        await Promise.all(keys.map((key) => saveEntryRef.current?.(key, { keepalive })));
     }, []);
-    flushRef.current = flushPendingSave;
+
+    // Keep refs pointed at the latest functions (assigned in an effect, not during render).
+    useEffect(() => {
+        saveEntryRef.current = saveEntry;
+        flushRef.current = flushPendingSave;
+    });
 
     useEffect(() => {
         const onVisibility = () => { if (document.visibilityState === 'hidden') flushRef.current?.({ keepalive: true }); };
@@ -489,7 +516,7 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
             [...dirtyEntries.current.keys()].forEach((key) => {
                 clearTimeout(retryTimers.current.get(key));
                 retryTimers.current.delete(key);
-                saveEntry(key);
+                saveEntryRef.current?.(key);
             });
         };
         document.addEventListener('visibilitychange', onVisibility);
@@ -525,17 +552,19 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                     onChange={(event) => setSearchQuery(event.target.value)}
                 />
                 {searchQuery.trim().length > 0 ? <nav className="search-results" aria-label="Search results">
-                    {searchResults.length ? Object.entries(groupedSearchResults).map(([key, matches]) => (
+                    {activeResults.length ? Object.entries(groupedSearchResults).map(([key, matches]) => (
                         <div className="search-result-group" key={key}>
                             <h3>{dateLabel(key)}</h3>
+                            
                             {matches.map((match) => (
+                                /* eslint-disable-next-line react-hooks/refs -- only called from a click handler, not during render */
                                 <button className="search-result" type="button" key={`${match.field}-${match.start}`} onClick={() => selectSearchMatch(match, key, searchQuery.trim())}>
                                     <small><SearchSnippet snippet={match.snippet} position={match.snippetStart} length={match.length} /></small>
                                 </button>
                             ))}
                         </div>
                     )) : <p className="search-empty">No results</p>}
-                    {searchTruncated && <p className="search-empty">Showing first {searchResults.length} matches</p>}
+                    {activeTruncated && <p className="search-empty">Showing first {activeResults.length} matches</p>}
                 </nav> : <nav>
                     {Object.entries(groupedDates).map(([year, months]) => (
                         <div className="journal-year" key={year}>
@@ -561,10 +590,9 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                         </div>
                     ))}
                 </nav>}
-                <small className="sidebar-save-status" aria-live="polite">{Object.values(saveStates).includes('error') ? 'Not saved' : dirtyEntries.current.size || savesInFlight.current.size ? 'Saving…' : Object.values(saveStates).includes('saved') ? 'Saved' : ''}</small>
                 <button className="logout-button" type="button" onClick={async () => { await flushPendingSave(); onLogout(); }}>Log Out</button>
             </aside>
-            <div className="journal-page">
+            <div className={`journal-page${isJumping ? ' is-jumping' : ''}`}>
             {error && <p role="alert" className="journal-error">{error}</p>}
             {dates.length > 0 && (
                 <Virtuoso
@@ -576,11 +604,10 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                     defaultItemHeight={180}
                     increaseViewportBy={200}
                     rangeChanged={({ startIndex, endIndex }) => loadWindow(startIndex, endIndex)}
-                    totalListHeightChanged={handleTotalListHeightChanged}
                     itemContent={(_, key) => {
                         const entry = entries[key];
                         if (!entry) {
-                        return <div className="journal-placeholder journal-item-content" aria-hidden="true" data-journal-date={key} />;
+                            return <div className="journal-placeholder journal-item-content" aria-hidden="true" data-journal-date={key} />;
                         }
                         return (
                             <article className="journal-entry journal-item-content" data-journal-date={key}>
@@ -593,7 +620,11 @@ export default function EntryList({ onLogout, onCloseSidebar }) {
                                     onBlur={() => flushPendingSave()}
                                     onMount={handleTextareaMount}
                                 />
-                                {dirtyEntries.current.has(key) && failedSaveKeys.has(key) && <small className="journal-save-status" aria-live="polite">Not saved, retrying…</small>}
+                                <small className="journal-save-status" aria-live="polite">
+                                    {failedSaveKeys.has(key) ? 'Not saved, retrying…'
+                                        : saveStates[key] === 'pending' || saveStates[key] === 'saving' ? 'Saving…'
+                                        : saveStates[key] === 'saved' ? 'Saved' : ''}
+                                </small>
                             </article>
                         );
                     }}

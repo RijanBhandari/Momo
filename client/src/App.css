@@ -262,6 +262,15 @@
   padding: 8px 0 40vh;
 }
 
+.journal-page.is-jumping {
+  animation: journal-jump-fade 350ms ease-out;
+}
+
+@keyframes journal-jump-fade {
+  0% { opacity: 0.55; }
+  100% { opacity: 1; }
+}
+
 .journal-placeholder {
   height: 180px;
   margin-bottom: 2.5rem;
